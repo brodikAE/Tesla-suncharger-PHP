@@ -56,7 +56,7 @@ class chargeTesla{
 		$long_raw = $this->status['response']['drive_state']['longitude'];
 		$plug_status = $this->status['response']['charge_state']['charge_port_door_open'];
 
-		if(((($this->lat_home - 0.0002) <= $lat_raw) || ($lat_raw <= ($this->lat_home + 0.0002))) && ((($this->long_home - 0.0002) <= $long_raw) || ($long_raw <= ($this->long_home + 0.0002)))){
+		if((($lat_raw >= ($lat_home - 0.0002)) && ($lat_raw <= ($lat_home + 0.0002))) && (($long_raw >= ($long_home - 0.0002)) && ($long_raw <= ($long_home + 0.0002)))){
 			$this->at_home = 1;
 		}else{
 			$this->at_home = 0;
