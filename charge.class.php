@@ -8,12 +8,15 @@
 
 class chargeTesla{
 
-	function __construct($Tclass, $car_name, $lat_home, $long_home, $min_night_charge=30, $max_day_battery_level=90, $meter_threshold=250, $sunrise_hour=7, $sunset_hour=20){
+	function __construct($Tclass, $car_name, $lat_home, $long_home, $min_amps=5, $max_amps=13, $deact_amps=10, $min_night_charge=30, $max_day_battery_level=90, $meter_threshold=250, $sunrise_hour=7, $sunset_hour=20){
 
 		$this->Tclass = $Tclass;
 		$this->car_name = $car_name;
 		$this->lat_home = $lat_home;
 		$this->long_home = $long_home;
+		$this->min_amps = $min_amps;
+		$this->max_amps = $max_amps;
+		$this->deact_amps = $deact_amps;
 		$this->min_night_charge = $min_night_charge;
 		$this->max_day_battery_level = $max_day_battery_level;
 		$this->meter_threshold = $meter_threshold;
@@ -54,14 +57,14 @@ class chargeTesla{
 		$plug_status = $this->status['response']['charge_state']['charge_port_door_open'];
 
 		if(((($this->lat_home - 0.0002) <= $lat_raw) || ($lat_raw <= ($this->lat_home + 0.0002))) && ((($this->long_home - 0.0002) <= $long_raw) || ($long_raw <= ($this->long_home + 0.0002)))){
-			$this->at_home = "At Home";
+			$this->at_home = 1;
 		}else{
-			$this->at_home = "Not At Home";
+			$this->at_home = 0;
 		}
 		if($plug_status){
-			$this->tpi = "Plugged In";
+			$this->tpi = 1;
 		}else{
-			$this->tpi = "Not Plugged In";
+			$this->tpi = 0;
 		}
 
 		$this->charging_status(0);
@@ -72,13 +75,12 @@ class chargeTesla{
 	function charging_status($in=true){
 
 		if($this->status['response']['charge_state']['charging_state'] == "Charging"){
-			$this->currently_charging = "Charging";
-			$current_amps = $this->status['response']['charge_state']['charge_amps'];
+			$this->currently_charging = 1;
 		}else{
-			$this->currently_charging = "Not Charging";
-			$current_amps = 0;
+			$this->currently_charging = 0;
 		}
 
+		$current_amps = $this->status['response']['charge_state']['charge_amps'];
 		$charge_limit = $this->status['response']['charge_state']['charge_limit_soc'];
 		$battery_level = $this->status['response']['charge_state']['battery_level'];
 
@@ -115,13 +117,13 @@ class chargeTesla{
 	function set_charging_rate($amps){
 
 		if(!is_numeric($amps))
-			$amps = 16;
+			$amps = $this->max_amps;
 
-		if($amps < 0)
-			$amps = 0;
+		if($amps < $this->min_amps)
+			$amps = $this->min_amps;
 
-		if($amps > 40)
-			$amps = 40;
+		if($amps > $this->max_amps)
+			$amps = $this->max_amps;
 
 		$success = 0;
 		do{
@@ -135,60 +137,61 @@ class chargeTesla{
 		return true;
 	}
 
-	function cylcic_check($free_energy, $type=0){
+	function cyclic_check($free_energy, $type=0){
 
 		$mul = 1;
 		if($type == 0){
 			$mul = -1;
 		}
 
+		$active_limit = $this->max_day_battery_level;
 		$now_hour = date("H", strtotime("now"));
 		if($now_hour < $this->sunrise_hour || $now_hour > $this->sunset_hour){
-			if($this->at_home == "At Home" && $this->tpi == "Plugged In"){
+			if($this->at_home == 1 && $this->tpi == 1){
 				if($this->status['response']['charge_state']['battery_level'] < $this->min_night_charge){
-					if($this->currently_charging == "Not Charging"){
+					if($this->currently_charging == 0){
 						$this->start_charging();
-						$this->currently_charging = "Charging";
+						$this->currently_charging = 1;
 					}
-					$new_amps = 32;	
+					$new_amps = $this->max_amps;	
 				}else{
-					if($this->currently_charging == "Charging"){
+					if($this->currently_charging == 1){
 						$this->stop_charging();
-						$this->currently_charging = "Not Charging";
+						$this->currently_charging = 0;
 					}
-					$new_amps = 0;	
+					$new_amps = $this->min_amps;	
 				}
 				$this->set_charging_rate($new_amps);
 				$active_limit = $this->min_night_charge;
 			}
 		}else{
-			if(abs($free_energy) < $this->meter_threshold){
-				$incremental_amps = 0;
-			}else{
-				$incremental_amps = round($free_energy / 230)*$mul;
-			}
-			$new_amps = $this->status['response']['charge_state']['charge_amps'] + $incremental_amps;
-			if($this->at_home == "At Home" && $this->tpi == "Plugged In"){
+			if($this->at_home == 1 && $this->tpi == 1){
+				if(abs($free_energy) < $this->meter_threshold){
+					$incremental_amps = 0;
+				}else{
+					$incremental_amps = round($free_energy / 230)*$mul;
+				}
+				$new_amps = $this->status['response']['charge_state']['charge_amps'] + $incremental_amps;
 				if($this->status['response']['charge_state']['battery_level'] < $this->max_day_battery_level){
-					if($new_amps >= 5 && $this->currently_charging == "Not Charging"){
+					if($new_amps >= $this->min_amps && $this->currently_charging == 0){
 						$this->start_charging();
-						$this->currently_charging = "Charging";
+						$this->currently_charging = 1;
 						$this->set_charging_rate($new_amps);
 					}
-					if($incremental_amps != 0 && $this->currently_charging == "Charging"){
-						$this->set_charging_rate($new_amps);
-					}
-					if($this->status['response']['charge_state']['charge_amps'] <= 5 && $this->currently_charging == "Charging" && $incremental_amps >= -2){
+					if($this->status['response']['charge_state']['charge_amps'] <= $this->min_amps && $this->currently_charging == 1 && $incremental_amps <= ($this->deact_amps*$mul)){
 						$this->stop_charging();
-						$this->currently_charging = "Not Charging";
-						$this->set_charging_rate(0);
+						$this->currently_charging = 0;
+						$this->set_charging_rate($this->min_amps);
+					}
+					if($incremental_amps != 0 && $this->currently_charging == 1){
+						$this->set_charging_rate($new_amps);
 					}
 				}
 			}
 			$active_limit = $this->max_day_battery_level;
 		}
 
-		return array("Location" => $this->at_home, "State" => $this->tpi, "Mode" => $this->currently_charging, "Limit" => $active_limit, "Battery" => $this->status['response']['charge_state']['battery_level'], "Amps" => $new_amps, "Added amps" => $incremental_amps);
+		return array("Location" => $this->at_home, "State" => $this->tpi, "Mode" => $this->currently_charging, "Limit" => $active_limit, "Battery" => $this->status['response']['charge_state']['battery_level'], "Amps" => $new_amps, "Added" => $incremental_amps);
 
 	}
 
