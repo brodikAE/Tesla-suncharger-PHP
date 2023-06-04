@@ -152,12 +152,14 @@ class chargeTesla{
 			$mul = -1;
 		}
 
-		$active_amps = $this->status['response']['charge_state']['battery_level'];
+		$battery_level = $this->status['response']['charge_state']['battery_level'];
+		$active_amps = $this->status['response']['charge_state']['charge_amps'];
 		$active_limit = $this->max_day_battery_level;
+		$real_increment = 0;
 		$now_hour = date("H", strtotime("now"));
 		if($now_hour < $this->sunrise_hour || $now_hour > $this->sunset_hour){
 			if($this->at_home == 1 && $this->tpi == 1){
-				if($this->status['response']['charge_state']['battery_level'] < $this->min_night_charge){
+				if($battery_level < $this->min_night_charge){
 					if($this->currently_charging == 0){
 						$this->start_charging();
 						$this->currently_charging = 1;
@@ -176,28 +178,31 @@ class chargeTesla{
 			}
 		}else{
 			if($this->at_home == 1 && $this->tpi == 1){
-				if($this->status['response']['charge_state']['battery_level'] < $this->max_day_battery_level){
+				if($battery_level < $this->max_day_battery_level){
 					if(abs($free_energy) < $this->meter_threshold){
 						$incremental_amps = 0;
 					}else{
 						$incremental_amps = round($free_energy/230)*$mul;
 					}
-					$new_amps = $this->filter_amps($this->status['response']['charge_state']['charge_amps'] + $incremental_amps);
+					$new_amps = $this->filter_amps($active_amps + $incremental_amps);
 
 					if($new_amps >= $this->min_amps && $this->currently_charging == 0){
 						$this->start_charging();
 						$this->currently_charging = 1;
 						$this->set_charging_rate($new_amps);
+						$real_increment = $active_amps - $new_amps;
 						$active_amps = $new_amps;
 					}
-					if($this->status['response']['charge_state']['charge_amps'] <= $this->min_amps && $this->currently_charging == 1 && $incremental_amps <= ($this->deact_amps*$mul)){
+					if($active_amps <= $this->min_amps && $this->currently_charging == 1 && $incremental_amps <= ($this->deact_amps*$mul)){
 						$this->stop_charging();
 						$this->currently_charging = 0;
 						$this->set_charging_rate($this->min_amps);
-						$active_amps = $new_amps;
+						$real_increment = $active_amps - $this->min_amps;
+						$active_amps = $this->min_amps;
 					}
 					if($incremental_amps != 0 && $this->currently_charging == 1){
 						$this->set_charging_rate($new_amps);
+						$real_increment = $active_amps - $new_amps;
 						$active_amps = $new_amps;
 					}
 					
@@ -206,7 +211,7 @@ class chargeTesla{
 			$active_limit = $this->max_day_battery_level;
 		}
 
-		return array("Location" => $this->at_home, "State" => $this->tpi, "Mode" => $this->currently_charging, "Limit" => $active_limit, "Battery" => $this->status['response']['charge_state']['battery_level'], "Amps" => $active_amps, "Added" => $incremental_amps);
+		return array("Location" => $this->at_home, "State" => $this->tpi, "Mode" => $this->currently_charging, "Limit" => $active_limit, "Battery" => $this->status['response']['charge_state']['battery_level'], "Amps" => $active_amps, "Added" => $real_increment);
 
 	}
 
