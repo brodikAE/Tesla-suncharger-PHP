@@ -38,7 +38,7 @@ class chargeTesla{
 
 		do{
 			$wake_up = $this->Tesla->API("WAKE_UP");
-			if($wake_up['response']['vehicle_id'] == $this->Tesla->vehicleId)
+			if($wake_up['response']['id'] == $this->Tesla->vehicleId)
 				$success = 1;
 			else
 				sleep(3);
@@ -46,7 +46,7 @@ class chargeTesla{
 
 		do{
 			$this->status = $this->Tesla->API("VEHICLE_DATA");
-			if($this->status['response']['vehicle_id'] == $this->Tesla->vehicleId)
+			if($this->status['response']['id'] == $this->Tesla->vehicleId)
 				$success = 2;
 			else
 				sleep(3);
